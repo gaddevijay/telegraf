@@ -130,7 +130,6 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 	grpc_server, grpc_port := s[0], s[1]
 
 	var err error
-
 	// If a certificate is provided, open a secure channel. Else open insecure one
 	if m.CertFile != "" {
 		creds, err := credentials.NewClientTLSFromFile(m.CertFile, "")
@@ -148,7 +147,6 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 	if m.Debug {
 		log.Printf("I! Opened a new gRPC session to %s on port %s", grpc_server, grpc_port)
 	}
-
 	// If username, password and clientId are provided, authenticate user before subscribing for data
 	if m.Username != "" && m.Password != "" && m.ClientId != "" {
 		lc := authentication.NewLoginClient(m.grpcClientConn)
@@ -162,9 +160,7 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 			log.Fatalf("E! Failed to authenticate the user")
 		}
 	}
-
 	c := telemetry.NewOpenConfigTelemetryClient(m.grpcClientConn)
-
 	for _, sensor := range m.Sensors {
 		go func(sensor string, acc telegraf.Accumulator) {
 			spathSplit := strings.SplitN(sensor, " ", -1)
@@ -206,112 +202,118 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 				sensorName = sensor
 				pathlist = append(pathlist, &telemetry.Path{Path: sensor, SampleFrequency: uint32(reportingRate)})
 			}
-			stream, err := c.TelemetrySubscribe(context.Background(),
-				&telemetry.SubscriptionRequest{PathList: pathlist})
-			if err != nil {
-				log.Fatalf("E! Could not subscribe: %v", err)
-			}
+			
 			for {
-				r, err := stream.Recv()
-				if err == io.EOF {
+				var r *telemetry.OpenConfigData
+				var errRecv error
+				stream, err := c.TelemetrySubscribe(context.Background(),
+					&telemetry.SubscriptionRequest{PathList: pathlist})
+				if err != nil {
+					log.Fatalf("E! Could not subscribe: %v", err)
+				}
+				for {
+					r, errRecv = stream.Recv()
+					if (errRecv != nil) {
+						break
+					}
+					// Print incoming data as info if debug is set
+					if m.Debug {
+						log.Printf("I! Received: %v", r)
+					}
+
+					// Create a point and add to batch
+					tags := make(map[string]string)
+
+					if errRecv != nil {
+						log.Fatalln("E! Error: %v", err)
+					}
+
+					// Use empty prefix. We will update this when we iterate over key-value pairs
+					prefix := ""
+
+					// Insert additional tags
+					tags["device"] = grpc_server
+
+					dgroups := []DataGroup{}
+
+					for _, v := range r.Kv {
+						kv := make(map[string]interface{})
+
+						if v.Key == "__prefix__" {
+							prefix = v.GetStrValue()
+							continue
+						}
+
+						// Also, lets use prefix if there is one
+						xmlpath, finaltags := spitTagsNPath(prefix + v.Key)
+						finaltags["device"] = grpc_server
+
+						switch v.Value.(type) {
+						case *telemetry.KeyValue_StrValue:
+							// If StrAsTags is set, we treat all string values as tags
+							if m.StrAsTags {
+								finaltags[xmlpath] = v.GetStrValue()
+							} else {
+								kv[xmlpath] = v.GetStrValue()
+							}
+							break
+						case *telemetry.KeyValue_DoubleValue:
+							kv[xmlpath] = v.GetDoubleValue()
+							break
+						case *telemetry.KeyValue_IntValue:
+							kv[xmlpath] = v.GetIntValue()
+							break
+						case *telemetry.KeyValue_UintValue:
+							kv[xmlpath] = v.GetUintValue()
+							break
+						case *telemetry.KeyValue_SintValue:
+							kv[xmlpath] = v.GetSintValue()
+							break
+						case *telemetry.KeyValue_BoolValue:
+							kv[xmlpath] = v.GetBoolValue()
+							break
+						case *telemetry.KeyValue_BytesValue:
+							kv[xmlpath] = v.GetBytesValue()
+							break
+						}
+
+						// Insert other tags from message
+						finaltags["_system_id"] = r.SystemId
+						finaltags["_path"] = r.Path
+
+						// Insert derived key and value
+						dgroups = CollectionByKeys(dgroups).Insert(finaltags, kv)
+
+						// Insert data from message header
+						dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_sequence": r.SequenceNumber})
+						dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_timestamp": r.Timestamp})
+						dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_component_id": r.ComponentId})
+						dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_subcomponent_id": r.SubComponentId})
+					}
+
+					// Print final data collection
+					if m.Debug {
+						log.Printf("I! Available collection is: %v", dgroups)
+					}
+
+					tnow := time.Now()
+					// Iterate through data groups and add them
+					for _, group := range dgroups {
+						if len(group.tags) == 0 {
+							acc.AddFields(sensorName, group.data, tags, tnow)
+						} else {
+							acc.AddFields(sensorName, group.data, group.tags, tnow)
+						}
+					}
+				}
+				if (errRecv == io.EOF){
 					break
 				}
-				if err != nil {
-					log.Fatalf("E! Failed to read: %v", err)
-				}
-
-				// Print incoming data as info if debug is set
-				if m.Debug {
-					log.Printf("I! Received: %v", r)
-				}
-
-				// Create a point and add to batch
-				tags := make(map[string]string)
-
-				if err != nil {
-					log.Fatalln("E! Error: %v", err)
-				}
-
-				// Use empty prefix. We will update this when we iterate over key-value pairs
-				prefix := ""
-
-				// Insert additional tags
-				tags["device"] = grpc_server
-
-				dgroups := []DataGroup{}
-
-				for _, v := range r.Kv {
-					kv := make(map[string]interface{})
-
-					if v.Key == "__prefix__" {
-						prefix = v.GetStrValue()
-						continue
-					}
-
-					// Also, lets use prefix if there is one
-					xmlpath, finaltags := spitTagsNPath(prefix + v.Key)
-					finaltags["device"] = grpc_server
-
-					switch v.Value.(type) {
-					case *telemetry.KeyValue_StrValue:
-						// If StrAsTags is set, we treat all string values as tags
-						if m.StrAsTags {
-							finaltags[xmlpath] = v.GetStrValue()
-						} else {
-							kv[xmlpath] = v.GetStrValue()
-						}
-						break
-					case *telemetry.KeyValue_DoubleValue:
-						kv[xmlpath] = v.GetDoubleValue()
-						break
-					case *telemetry.KeyValue_IntValue:
-						kv[xmlpath] = v.GetIntValue()
-						break
-					case *telemetry.KeyValue_UintValue:
-						kv[xmlpath] = v.GetUintValue()
-						break
-					case *telemetry.KeyValue_SintValue:
-						kv[xmlpath] = v.GetSintValue()
-						break
-					case *telemetry.KeyValue_BoolValue:
-						kv[xmlpath] = v.GetBoolValue()
-						break
-					case *telemetry.KeyValue_BytesValue:
-						kv[xmlpath] = v.GetBytesValue()
-						break
-					}
-
-					// Insert other tags from message
-					finaltags["_system_id"] = r.SystemId
-					finaltags["_path"] = r.Path
-
-					// Insert derived key and value
-					dgroups = CollectionByKeys(dgroups).Insert(finaltags, kv)
-
-					// Insert data from message header
-					dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_sequence": r.SequenceNumber})
-					dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_timestamp": r.Timestamp})
-					dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_component_id": r.ComponentId})
-					dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_subcomponent_id": r.SubComponentId})
-				}
-
-				// Print final data collection
-				if m.Debug {
-					log.Printf("I! Available collection is: %v", dgroups)
-				}
-
-				tnow := time.Now()
-				// Iterate through data groups and add them
-				for _, group := range dgroups {
-					if len(group.tags) == 0 {
-						acc.AddFields(sensorName, group.data, tags, tnow)
-					} else {
-						acc.AddFields(sensorName, group.data, group.tags, tnow)
-					}
+				if (errRecv != nil){
+					continue
 				}
 			}
 		}(sensor, acc)
-
 	}
 
 	return nil
