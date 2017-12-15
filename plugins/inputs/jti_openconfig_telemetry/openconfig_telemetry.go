@@ -314,6 +314,7 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 					break
 				}
 				if (errRecv != nil){
+				// Retry only if the retry flag is set to true, else exit with error
 					if m.Retry {
 						continue
 					} else {
