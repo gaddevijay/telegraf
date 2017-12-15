@@ -29,6 +29,7 @@ type OpenConfigTelemetry struct {
 	CertFile        string
 	Debug           bool
 	StrAsTags       bool
+	Retry			bool
 
 	parser parsers.Parser
 	sync.Mutex
@@ -72,6 +73,9 @@ var sampleConfig = `
 
   ## To treat all string values as tags, set this to true
   strAsTags = false
+
+  ## To enable retrying Telemetry Subscription if connection between device and telegraf breaks, set this to true
+  retry = true
 `
 
 func (m *OpenConfigTelemetry) SampleConfig() string {
@@ -202,7 +206,7 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 				sensorName = sensor
 				pathlist = append(pathlist, &telemetry.Path{Path: sensor, SampleFrequency: uint32(reportingRate)})
 			}
-			
+
 			for {
 				var r *telemetry.OpenConfigData
 				var errRecv error
@@ -310,7 +314,11 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 					break
 				}
 				if (errRecv != nil){
-					continue
+					if m.Retry {
+						continue
+					} else {
+						log.Fatalf("E! Failed to read: %v", errRecv)
+					}
 				}
 			}
 		}(sensor, acc)
