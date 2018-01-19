@@ -3,7 +3,6 @@ package juniperUDP
 import (
 	"os"
 	"log"
-//	"bytes"
 	"fmt"
 	"time"
 	"reflect"
@@ -110,7 +109,7 @@ func parseMap(data map[string]interface{}, masterKey string) []interface{} {
 	}
 	if len(leafData) != 0 {
 	        for i,key := range arrKey{
-			fmt.Println(key)
+			_ = key
 			for _,data_aa := range arrData[i].([]interface{}){
                                 leafTmp := leafData
 				if data_aa != nil {
@@ -146,40 +145,6 @@ func parseMap(data map[string]interface{}, masterKey string) []interface{} {
 }
 
 
-
-func parseCheck(data map[string]interface{}) string {
-	for key,val := range data{
-		switch v := val.(type) {
-		case int:
-    			fmt.Printf("Value = %s, Type = %s , key=%s, v=%s\n", val, reflect.TypeOf(val), key, v)
-			return "int"	
-		case float64:
-    			fmt.Printf("Value = %s, Type = %s \n", val, reflect.TypeOf(val))		
-			return "float"
-		case string:
-    			fmt.Printf("Value = %s, Type = %s \n", val, reflect.TypeOf(val))		
-			return "str"
-		case []interface{}:
-			for i,e := range(v){
-				fmt.Printf("\n@@@@@@@@%s: %s %s\n", i,reflect.TypeOf(e), e)
-				//parseCheck(e.(map[string]interface{}))	
-			}
-			fmt.Printf("Entered array of interfaces!! \n")
-		default:
-  		  // i isn't one of the types above
-			dataInner, ok := val.(map[string]interface{})
-       			if !ok {
-               			 panic("inner map is not a map!!!")
-        		}
-			parseCheck(dataInner)
-
-		}
-		
-	}
-	return "end"
-}
-
-
 // Parse returns a slice of Metrics from a text representation of a
 // metric (in line-protocol format)
 // with each metric separated by newlines. If any metrics fail to parse,
@@ -201,8 +166,6 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	jnprSensorName := ts.GetSensorName()
 	tmpSlice := strings.Split(jnprSensorName, ":")
 	sensorName := tmpSlice[1]
-//	fmt.Printf("\nPritning ts: \n", ts)
-	fmt.Printf("\nPrinting jnpr_senesor_name: %s\n", jnprSensorName)
 	_ = gpbTime
 	_ = measurementPrefix
 	_ = jnprSensorName
@@ -211,14 +174,12 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	if err!= nil{
 		fmt.Println("Error")
 	}
-//	fmt.Printf("\nPrinting tsJSON\n", tsJSON)
 	var data map[string]interface{}
         errU := json.Unmarshal([]byte(tsJSON), &data)
         if errU != nil {
                 panic(errU)	
 	}
 	enterpriseSensorData := data["enterprise"]
-	//fmt.Printf("Printing EnterpriseNetworks - %s, %s",enterpriseSensorData, reflect.TypeOf(enterpriseSensorData))
 	sensorData, ok := enterpriseSensorData.(map[string]interface{})
 	jnprSensorData := sensorData["[juniperNetworks]"]
 	if !ok {
@@ -226,13 +187,9 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	}
 	metrics := make([]telegraf.Metric, 0)
 	sensorNum := 0
-//	fmt.Println("\nDATA: \n")
-//	fmt.Println(data)
 	for _,sensorData := range jnprSensorData.(map[string]interface{}){
 		var fields map[string]interface{}
-		//var sensorName string		
 		if reflect.ValueOf(sensorData).Kind() == reflect.Map {
-		//	sensorName = key
 			_ = sensorName
 			parsedData := parseMap(sensorData.(map[string]interface{}), "")
 			for _,finalData := range(parsedData){
@@ -253,16 +210,8 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 					if err!=nil {fmt.Println(err)}
 					sensorNum++
 					sequenceNum++
-			//		fmt.Println("\n---------------------------------------------------\n")
 				}
 			}		
-		} else if reflect.ValueOf(sensorData).Kind() == reflect.Slice {
-			fmt.Printf("\nEntered Slice \n")	
-			parsedData := parseArray(sensorData.([]interface{}), "")
-			fmt.Println(parsedData)
-		} else { fmt.Printf("\nEntered Check\n")
-			parsedData := parseCheck(sensorData.(map[string]interface{}))
-			fmt.Println(parsedData)
 		}
 	}		
 //	fmt.Printf("\nData (JSON) = \n%s\n", data)
