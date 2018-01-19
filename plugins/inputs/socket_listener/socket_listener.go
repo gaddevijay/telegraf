@@ -292,8 +292,8 @@ func (sl *SocketListener) Stop() {
 }
 
 func newSocketListener() *SocketListener {
-	parser, _ := parsers.NewInfluxParser()
-
+	//parser, _ := parsers.NewInfluxParser()
+	parser, _ := parsers.NewJuniperUDPParser()
 	return &SocketListener{
 		Parser: parser,
 	}

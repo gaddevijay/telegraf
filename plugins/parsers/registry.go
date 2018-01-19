@@ -11,6 +11,7 @@ import (
 	"github.com/influxdata/telegraf/plugins/parsers/json"
 	"github.com/influxdata/telegraf/plugins/parsers/nagios"
 	"github.com/influxdata/telegraf/plugins/parsers/value"
+	"github.com/influxdata/telegraf/plugins/parsers/juniperUDP"
 )
 
 // ParserInput is an interface for input plugins that are able to parse
@@ -89,6 +90,8 @@ func NewParser(config *Config) (Parser, error) {
 	case "collectd":
 		parser, err = NewCollectdParser(config.CollectdAuthFile,
 			config.CollectdSecurityLevel, config.CollectdTypesDB)
+	case "juniperUDP":
+		parser, err = NewJuniperUDPParser()
 	default:
 		err = fmt.Errorf("Invalid data format: %s", config.DataFormat)
 	}
@@ -142,4 +145,8 @@ func NewCollectdParser(
 	typesDB []string,
 ) (Parser, error) {
 	return collectd.NewCollectdParser(authFile, securityLevel, typesDB)
+}
+
+func NewJuniperUDPParser()(Parser, error){
+	return &juniperUDP.JuniperUDPParser{}, nil
 }
