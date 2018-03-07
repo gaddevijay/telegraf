@@ -4,6 +4,7 @@ import (
 	"os"
 	"log"
 	"fmt"
+	"runtime"
 	"time"
 	"reflect"
 	"github.com/golang/protobuf/jsonpb"
@@ -28,7 +29,7 @@ import (
 	_"github.com/influxdata/telegraf/plugins/parsers/juniperUDP/port_exp"
 	_"github.com/influxdata/telegraf/plugins/parsers/juniperUDP/port"
 	"github.com/golang/protobuf/proto"
-	"strings"
+	_"strings"
 )
 
 // JuniperUDPParser is an object for Parsing incoming metrics.
@@ -151,53 +152,116 @@ func parseMap(data map[string]interface{}, masterKey string) []interface{} {
 // a non-nil error will be returned in addition to the metrics that parsed
 // successfully.
 func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
+	//out, _ := os.Create("telegraf_udp.log")
+	out, errFile := os.OpenFile("telegraf_udp.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if errFile != nil {
+		log.Fatal(errFile)
+	}
+	prefix := ""
+	flag := log.LstdFlags | log.Lmicroseconds | log.Lshortfile
+	newLog := log.New(out, prefix, flag)
+	newLog.Printf("Data byte buffer received!!\n")
+	sensorMapping := map[string]string{"jnpr_interface_ext" : "/junos/system/linecard/interface/",
+                  "cpu_memory_util_ext" : "/junos/system/linecard/cpu/memory/",
+                  "fabricMessageExt"  : "/junos/system/linecard/fabric",
+                  "jnpr_firewall_ext" : "/junos/system/linecard/firewall/",
+                  "jnprLogicalInterfaceExt" : "/junos/system/linecard/interface/logical/usage/",
+                  "npu_memory_ext" : "/junos/system/linecard/npu/memory/",
+                  "jnpr_npu_utilization_ext" : "/junos/system/linecard/npu/utilization/",
+                  "jnpr_optics_ext" : "/junos/system/linecard/optics/",
+                  "jnpr_packet_statistics_ext" : "/junos/system/linecard/packet/usage/",
+                  "jnpr_qmon_ext" : "/junos/system/linecard/qmon/",
+                  "inline_jflow_stats_ext" : "/junos/system/linecard/services/inline-jflow/",
+
+                  "jnpr_cmerror_data_ext" : "NA",
+                  "jnpr_cmerror_ext" : "NA",
+                  "jnpr_lsp_statistics_ext" : "NA",
+                  "jnpr_interface_exp_ext" : "NA",
+
+                  "jnpr_sr_stats_per_if_egress_ext" : "NA",
+                  "jnpr_sr_stats_per_if_ingress_ext" : "NA",
+                  "jnpr_sr_stats_per_sid_ext" : "NA",
+
+        }
+
+	go func() {
+		for {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			//log.Printf("\nAlloc = %v\nTotalAlloc = %v\nSys = %v\nNumGC = %v\n\n", m.Alloc / 1024, m.TotalAlloc / 1024, m.Sys / 1024, m.NumGC)
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	//s := string(buf[:len(buf)])
+	//fmt.Println("#######################################################################")
+	//fmt.Printf("%v",s)
+	//fmt.Println("#######################################################################")	
 	ts := &telemetry_top.TelemetryStream{}
 	if err := proto.Unmarshal(buf, ts); err != nil {
-        	log.Fatalln("Failed to parse address book:", err)
+		fmt.Println("Error!! Unable to parse data: ", err)
+		return nil,err
 	}
-	fmt.Println(ts)	
+	//fmt.Printf("%v",ts)	
 	host,errHost := os.Hostname()
+	_ = host
 	if errHost != nil {
-		fmt.Println("Error!! Host name not found")
+		fmt.Println("Error!! Host name not found: ", errHost)
+		return nil, errHost
 	}
 	deviceName := ts.GetSystemId()
+	newLog.Printf("Device : %v", deviceName)	
+	newLog.Printf("Host : %v", host)
 	gpbTime := ts.GetTimestamp()
 	measurementPrefix := "enterprise.juniperNetworks"
 	jnprSensorName := ts.GetSensorName()
-	tmpSlice := strings.Split(jnprSensorName, ":")
-	sensorName := tmpSlice[1]
+	sensorName := jnprSensorName
 	_ = gpbTime
 	_ = measurementPrefix
 	_ = jnprSensorName
 	m := &jsonpb.Marshaler{}
 	tsJSON,err := m.MarshalToString(ts)	
 	if err!= nil{
-		fmt.Println("Error")
+		fmt.Println("Error!! ", err)
 	}
 	var data map[string]interface{}
         errU := json.Unmarshal([]byte(tsJSON), &data)
         if errU != nil {
-                panic(errU)	
+		fmt.Println("Error!! Unable to unmarshal: ",errU)
+		return nil, nil
+                //panic(errU)	
 	}
+	//newLog.Printf("Data received : %v", data)
 	enterpriseSensorData := data["enterprise"]
 	sensorData, ok := enterpriseSensorData.(map[string]interface{})
 	jnprSensorData := sensorData["[juniperNetworks]"]
 	if !ok {
+		return nil, nil
     		panic("inner map is not a map!")
 	}
 	metrics := make([]telegraf.Metric, 0)
 	sensorNum := 0
-	for _,sensorData := range jnprSensorData.(map[string]interface{}){
+	for key, sensorData := range jnprSensorData.(map[string]interface{}){
 		var fields map[string]interface{}
 		if reflect.ValueOf(sensorData).Kind() == reflect.Map {
 			_ = sensorName
+			sensorName = key[1:len(key)-1]
+			var measurementName string
+			if val, ok := sensorMapping[sensorName]; ok {
+			   	measurementName = val	
+			} else {
+				measurementName = sensorName 
+			}
+			newLog.Printf("Sensor : %v", measurementName)
+			measurementName = "juniperNetworks." + measurementName
+			newLog.Printf("Measurement : %v", measurementName)
+			//newLog.Printf("Data received : %v", data)	
 			parsedData := parseMap(sensorData.(map[string]interface{}), "")
 			for _,finalData := range(parsedData){
 				sequenceNum := 0
 				for _,fin := range(finalData.([]interface{})){
 					//fin = fin.(map[string] interface{})
 					fin.(map[string]interface{})["device"] = deviceName
-					fin.(map[string]interface{})["host"] = host
+					//fin.(map[string]interface{})["host"] = host
 					fin.(map[string]interface{})["sensor_name"] = sensorName
 					fin.(map[string]interface{})["_seq"] = sequenceNum
 					fields = fin.(map[string]interface{})
@@ -205,9 +269,12 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 					for k, v := range p.DefaultTags {
 						tags[k] = v
 					}
-					mtrc,err := metric.New(sensorName, tags, fields,time.Now().UTC())
+					timestamp := time.Unix(int64(gpbTime)/1000, int64(gpbTime)%1000*1000000)
+					mtrc,err := metric.New(measurementName, tags, fields,timestamp)
 					metrics = append(metrics, mtrc)
-					if err!=nil {fmt.Println(err)}
+					if err!=nil {
+						fmt.Println("Error!! Unable to create telegraf metrics: ", err)
+					}
 					sensorNum++
 					sequenceNum++
 				}
@@ -221,6 +288,10 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 //	fmt.Println(measurementPrefix)
 //	fmt.Println("\nMetrics: \n")
 //	fmt.Println(metrics)
+	newLog.Printf("Parsed Data : %v\n", metrics)
+	if errFileClose := out.Close(); err != nil {
+		log.Fatal(errFileClose)
+	}
 	return metrics, err	
 //	return p.ParseWithDefaultTimePrecision(buf, time.Now(), "")
 }
