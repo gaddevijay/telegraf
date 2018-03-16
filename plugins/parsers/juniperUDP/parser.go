@@ -1,12 +1,14 @@
 package juniperUDP
 
 import (
+	"path/filepath"
 	"os"
 	"log"
 	"fmt"
 	"runtime"
 	"time"
 	"reflect"
+	"strconv"
 	"github.com/golang/protobuf/jsonpb"
 	"encoding/json"
 	"github.com/influxdata/telegraf"
@@ -153,7 +155,15 @@ func parseMap(data map[string]interface{}, masterKey string) []interface{} {
 // successfully.
 func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	//out, _ := os.Create("telegraf_udp.log")
-	out, errFile := os.OpenFile("telegraf_udp.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+   	if err != nil {
+            log.Fatal(err)
+    	}
+	path := dir+"/logs"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+ 	   os.Mkdir(path, 0777)
+	}
+	out, errFile := os.OpenFile("logs/telegraf_udp.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if errFile != nil {
 		log.Fatal(errFile)
 	}
@@ -240,6 +250,7 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	}
 	metrics := make([]telegraf.Metric, 0)
 	sensorNum := 0
+	sequenceNum := 0
 	for key, sensorData := range jnprSensorData.(map[string]interface{}){
 		var fields map[string]interface{}
 		if reflect.ValueOf(sensorData).Kind() == reflect.Map {
@@ -257,18 +268,19 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 			//newLog.Printf("Data received : %v", data)	
 			parsedData := parseMap(sensorData.(map[string]interface{}), "")
 			for _,finalData := range(parsedData){
-				sequenceNum := 0
+				//sequenceNum := 0
 				for _,fin := range(finalData.([]interface{})){
 					//fin = fin.(map[string] interface{})
 					fin.(map[string]interface{})["device"] = deviceName
 					//fin.(map[string]interface{})["host"] = host
 					fin.(map[string]interface{})["sensor_name"] = sensorName
-					fin.(map[string]interface{})["_seq"] = sequenceNum
+					//fin.(map[string]interface{})["_seq"] = sequenceNum
 					fields = fin.(map[string]interface{})
 					tags := make(map[string]string)
 					for k, v := range p.DefaultTags {
 						tags[k] = v
 					}
+					tags["_seq"] = strconv.Itoa(sequenceNum)
 					timestamp := time.Unix(int64(gpbTime)/1000, int64(gpbTime)%1000*1000000)
 					mtrc,err := metric.New(measurementName, tags, fields,timestamp)
 					metrics = append(metrics, mtrc)
