@@ -193,7 +193,7 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
                   "jnpr_sr_stats_per_sid_ext" : "NA",
 
         }
-
+	_ = sensorMapping
 	go func() {
 		for {
 			var m runtime.MemStats
@@ -257,11 +257,14 @@ func (p *JuniperUDPParser) Parse(buf []byte) ([]telegraf.Metric, error) {
 			_ = sensorName
 			sensorName = key[1:len(key)-1]
 			var measurementName string
+			measurementName = sensorName
+			/*
 			if val, ok := sensorMapping[sensorName]; ok {
 			   	measurementName = val	
 			} else {
 				measurementName = sensorName 
 			}
+			*/
 			newLog.Printf("Sensor : %v", measurementName)
 			measurementName = "juniperNetworks." + measurementName
 			newLog.Printf("Measurement : %v", measurementName)
