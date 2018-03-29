@@ -1,7 +1,10 @@
-JTI OpenConfig Telemetry Parser Plugin
+# JTI OpenConfig Telemetry Input Plugin
+
 This plugin parses Juniper Networks implementation of UDP data from listed sensors using Junos Telemetry Interface and converts it into an easy to store format. 
 
-Configuration:
+### Configuration:
+
+```toml
 [[inputs.socket_listener]]
    ## URL to listen on
    # service_address = "tcp://:8094"
@@ -45,5 +48,9 @@ Configuration:
 #   ## Specify "juniperUDP" data format to use this juniper specific parser plugin
     data_format = "juniperUDP"
 
-Tags:
-All measurements are tagged appropriately using the identifier information in incoming data
+```
+
+### Tags:
+
+- All measurements are tagged appropriately using the identifier information
+  in incoming data
