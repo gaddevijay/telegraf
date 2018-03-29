@@ -1,6 +1,6 @@
-# JTI OpenConfig Telemetry Input Plugin
+# JTI Parser Plugin
 
-This plugin parses Juniper Networks implementation of UDP data from listed sensors using Junos Telemetry Interface and converts it into an easy to store format. 
+This plugin parses Juniper Networks implementation of UDP data from sensors sending data on the specified port using Junos Telemetry Interface and converts it into an easy to store format. 
 
 ### Configuration:
 
