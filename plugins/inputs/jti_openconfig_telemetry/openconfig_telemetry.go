@@ -301,8 +301,15 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 							dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_timestamp": r.Timestamp})
 							dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_component_id": r.ComponentId})
 							dgroups = CollectionByKeys(dgroups).Insert(finaltags, map[string]interface{}{"_subcomponent_id": r.SubComponentId})
+							log.Printf("===================================================")
+							log.Printf("system_id: %v", r.SystemId)
+							log.Printf("component_id: %v", r.ComponentId)
+							log.Printf("sub_component_id: %v", r.SubComponentId)
+							log.Printf("path: %v", r.Path)
+							log.Printf("timestamp: %v", r.Timestamp)
+
 						}
-	
+						
 						// Print final data collection
 						if m.Debug {
 							log.Printf("I! Available collection is: %v", dgroups)
