@@ -226,6 +226,7 @@ func (m *OpenConfigTelemetry) Start(acc telegraf.Accumulator) error {
 					for {
 						r, errRecv = stream.Recv()
 						if (errRecv != nil) {
+							log.Printf("E! Error: %v", errRecv)
 							break
 						}
 						// Print incoming data as info if debug is set
